@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2
+
+- Jomini date convertion in parsing and reversion.
+- JSON dump(s)/load(s) functions to handle Python dates.
+
 ## 0.1
 
 - Initial public release.

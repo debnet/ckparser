@@ -101,10 +101,10 @@ Parse a directory recursively and write JSON output:
 python -m ckparser my_mod/common --output output
 ```
 
-Include comments in the parsed output:
+Include comments and/or dates in the parsed output:
 
 ```bash
-python -m ckparser my_mod/common --comments
+python -m ckparser my_mod/common --comments --dates
 ```
 
 Revert a JSON file back to Jomini format:
@@ -381,6 +381,14 @@ With `comments=True` or `--comments`, the parser attempts to preserve them in an
 
 Comment preservation should be considered practical rather than perfectly lossless.
 
+### Dates
+
+By default, dates are not converted in Python `datetime.date` objects in parsing. 
+
+While convenient, Jomini date format (`Y[YYY].M[M].D[D]`) does not enforce validation and can be invalid.
+
+With `dates=True` or `--dates`, the parser attempts to convert these dates if possible and keeps invalid dates as text.
+
 ### Localization parsing
 
 `ckparser` also includes a dedicated parser for Paradox localization files:
@@ -479,9 +487,9 @@ Paradox scripting languages include many practical exceptions, formatting varian
 
 ### Parsing
 
-* `parse_text(text, return_text_on_error=False, comments=False, filename=None, is_global=False)`
-* `parse_file(path, output_dir=None, encoding="utf_8_sig", base_dir=None, save=False, comments=False, is_global=False, patch=None)`
-* `parse_all_files(path, output_dir=None, encoding="utf_8_sig", keep_data=False, save=False, comments=False, variables_first=True)`
+* `parse_text(text, return_text_on_error=False, comments=False, dates=False, filename=None, is_global=False)`
+* `parse_file(path, output_dir=None, encoding="utf_8_sig", base_dir=None, save=False, comments=False, dates=False, is_global=False, patch=None)`
+* `parse_all_files(path, output_dir=None, encoding="utf_8_sig", keep_data=False, save=False, comments=False, dates=False, variables_first=True)`
 
 ### Reversion
 

@@ -28,6 +28,7 @@ Author: Marc Debureaux (debnet)
 Project: https://github.com/debnet/ckparser
 License: MIT
 """
+
 import argparse
 import ast
 import colorsys
@@ -40,7 +41,7 @@ import re
 import time
 
 # Script version
-__version__ = "0.1"
+__version__ = "0.2"
 
 # Logger (because logging is awesome)
 logger = logging.getLogger(__name__)
@@ -51,6 +52,28 @@ try:
 except ImportError:
     detect = None
     logger.warning("chardet not installed, encoding detection is disabled!")
+
+
+class JominiJSONEncoder(json.JSONEncoder):
+    # JSON specific encoder for dates
+    def default(self, obj):
+        if isinstance(obj, datetime.date):
+            return f"{obj.year}.{obj.month}.{obj.day}"
+        return super().default(obj)
+
+
+def jomini_object_hook(obj):
+    # JSON specific decoder for dates
+    for key, value in obj.items():
+        if isinstance(value, str) and regex_date.match(value):
+            obj[key] = convert_date(value) or value
+    return obj
+
+
+json_load = functools.partial(json.load, object_hook=jomini_object_hook)
+json_loads = functools.partial(json.loads, object_hook=jomini_object_hook)
+json_dump = functools.partial(json.dump, cls=JominiJSONEncoder, indent=4, ensure_ascii=False)
+json_dumps = functools.partial(json.dumps, cls=JominiJSONEncoder, indent=4, ensure_ascii=False)
 
 # Boolean transformation
 booleans = {"yes": True, "no": False}
@@ -84,6 +107,8 @@ regex_values = re.compile(r"(([?!<=>]+)\s*\n+)|(\n+\s*([?!<=>]+))")
 regex_line = re.compile(r"\"?(?P<key>[^\s\"]+)\"?\s*(?P<operator>[?!<=>]+)\s*(list\s*)?(?P<value>.*)")
 # Regex to parse independent items in a list
 regex_item = re.compile(r"(\"[^\"]+\"|[\d\.]+|[^\s]+)")
+# Regex to parse dates
+regex_date = re.compile(r"^(?:\d{1,4})\.(?:[1-9]|1[0-2])\.(?:[1-9]|[12]\d|3[01])$")
 # Regex to remove empty lines
 regex_empty = re.compile(r"(\n\s*\n)+", re.MULTILINE)
 # Regex to parse locale files
@@ -151,12 +176,13 @@ def read_file(path, encoding="utf_8_sig"):
         return file.read()
 
 
-def parse_text(text, return_text_on_error=False, comments=False, filename=None, is_global=False):
+def parse_text(text, return_text_on_error=False, comments=False, dates=False, filename=None, is_global=False):
     """
     Parse raw text
     :param text: Text to parse
     :param return_text_on_error: (default false) Return working text document if parsing fails
     :param comments: (default false) Include comments?
+    :param dates: (default false) Include dates?
     :param filename: (default none) Filename (only for debugging)
     :param is_global: (default false) Are variables global?
     :return: Parsed data as dictionary
@@ -251,10 +277,13 @@ def parse_text(text, return_text_on_error=False, comments=False, filename=None, 
                     value = val
                 elif value:
                     # Try to convert value to Python value
-                    try:
-                        value = ast.literal_eval(value)
-                    except:  # noqa
-                        pass
+                    if dates and regex_date.match(value):
+                        value = convert_date(value) or value
+                    else:
+                        try:
+                            value = ast.literal_eval(value)
+                        except:  # noqa
+                            pass
                 # If key is duplicate with direct value
                 if key in node:
                     if node[key] != value:  # Avoid single duplicates
@@ -426,11 +455,15 @@ def parse_text(text, return_text_on_error=False, comments=False, filename=None, 
                                     logger.warning(f"Filename: {filename}")
                                 logger.warning(f'Value for "{value}" cannot be found (line: {line_number})')
                             node.append({"@type": "variable", "@value": item, "@result": result})
+                        elif dates and regex_date.match(item):
+                            item = convert_date(item) or item
+                            node.append(item)
                         else:
                             try:
-                                node.append(ast.literal_eval(item))
+                                item = ast.literal_eval(item)
                             except:  # noqa
-                                node.append(item)
+                                pass
+                            node.append(item)
         except Exception as error:
             if filename:
                 logger.error(f"Filename: {filename}")
@@ -448,6 +481,7 @@ def parse_file(
     base_dir=None,
     save=False,
     comments=False,
+    dates=False,
     is_global=False,
     patch=None,
 ):
@@ -459,6 +493,7 @@ def parse_file(
     :param base_dir: Base directory (for debug)
     :param save: (default false) Save parsed file in output directory
     :param comments: Include comments?
+    :param dates: Include dates?
     :param is_global: (default false) Are file's variables global?
     :param patch: String replacement patterns
     :return: Parsed data as dictionary or text if parsing fails
@@ -475,7 +510,9 @@ def parse_file(
         text = re.sub(pattern, replacement, text)
     filename = os.path.join(base_dir, os.path.basename(path)).replace(os.sep, "/")
     logger.debug(f"Parsing {filename}")
-    data = parse_text(text, return_text_on_error=True, comments=comments, filename=filename, is_global=is_global)
+    data = parse_text(
+        text, return_text_on_error=True, comments=comments, dates=dates, filename=filename, is_global=is_global
+    )
     if save:
         filename, _ = os.path.splitext(os.path.basename(path))
         directory = os.path.join(output_dir or "output", *base_dir.split("/")).replace(os.sep, "/")
@@ -490,7 +527,7 @@ def parse_file(
         else:
             filename = os.path.join(directory, filename + ".json")
             with open(filename, "w") as file:
-                json.dump(data, file, indent=4)
+                json_dump(data, file)
     total_time = time.monotonic() - start_time
     logger.debug(f"Elapsed time: {total_time:0.3f}s!")
     return data
@@ -503,6 +540,7 @@ def parse_all_files(
     keep_data=False,
     save=False,
     comments=False,
+    dates=False,
     variables_first=True,
     _variables_only=False,
 ):
@@ -514,6 +552,7 @@ def parse_all_files(
     :param keep_data: (default false) Return parsed data of all files in a dictionary
     :param save: (default false) Save every parsed data in output directory
     :param comments: Include comments?
+    :param dates: Include dates?
     :param variables_first: Try to parse variables first
     :return: Dictionary (key: file, value: parsed data if keep_data=True)
     """
@@ -522,12 +561,13 @@ def parse_all_files(
     if variables_first and not _variables_only:
         success.update(
             parse_all_files(
-                path,
-                output_dir,
-                encoding,
-                keep_data,
-                save,
-                comments,
+                path=path,
+                output_dir=output_dir,
+                encoding=encoding,
+                keep_data=keep_data,
+                save=save,
+                comments=comments,
+                dates=dates,
                 variables_first=False,
                 _variables_only=True,
             )
@@ -547,6 +587,7 @@ def parse_all_files(
                 base_dir=path,
                 save=save,
                 comments=comments,
+                dates=dates,
                 is_global=_variables_only,
             )
             if isinstance(data, str):
@@ -561,13 +602,14 @@ def parse_all_files(
     return success
 
 
-def parse_all_locales(path, encoding="utf_8_sig", language="english", save=False):
+def parse_all_locales(path, encoding="utf_8_sig", language="english", save=False, filepath="_locales.json"):
     """
     Parse all locales strings
     :param path: Path where to find locale files
     :param encoding: Encoding for reading files
     :param language: Target language
     :param save: (default false) save locales in file
+    :param filepath: locales output file location
     :return: Locales in dictionary
     """
     locales = {}
@@ -595,8 +637,8 @@ def parse_all_locales(path, encoding="utf_8_sig", language="english", save=False
                             key, _, value = match.groups()
                             locales[key] = value
     if save:
-        with open("_locales.json", "w") as file:
-            json.dump(locales, file, indent=4, sort_keys=True)
+        with open(filepath, "w") as file:
+            json_dump(locales, file, sort_keys=True)
     return locales
 
 
@@ -729,6 +771,8 @@ def revert_value(value, from_key=None, prev_key=None, **kwargs):
             return f'"{value}"'
     elif isinstance(value, dict):
         value = revert(value, from_key=from_key, prev_key=prev_key, depth=0, **kwargs)
+    elif isinstance(value, datetime.date):
+        value = f"{value.year}.{value.month}.{value.day}"
     return value
 
 
@@ -769,7 +813,7 @@ def revert_file(path, output_dir=None, encoding="utf_8_sig", base_dir=None, save
         base_dir = os.path.dirname(path.replace(base_dir, ""))
     base_dir = base_dir or "."
     with open(path) as file:
-        data = json.load(file)
+        data = json_load(file)
     filename = os.path.join(str(base_dir), os.path.basename(path))
     logger.debug(f"Reverting {filename}")
     text = revert(data)
@@ -793,7 +837,7 @@ def load_variables(filepath="_variables.json"):
     if not os.path.exists(filepath):
         return
     with open(filepath) as file:
-        global_variables = json.load(file)
+        global_variables = json_load(file)
 
 
 def save_variables(filepath="_variables.json"):
@@ -803,7 +847,7 @@ def save_variables(filepath="_variables.json"):
     if not global_variables:
         return
     with open(filepath, "w") as file:
-        json.dump(global_variables, file, indent=4, sort_keys=True)
+        json_dump(global_variables, file, sort_keys=True)
 
 
 def main():
@@ -818,6 +862,7 @@ def main():
     parser.add_argument("--output", type=str, help="output directory for parsing results")
     parser.add_argument("--revert", action="store_true", help="revert JSON files?")
     parser.add_argument("--comments", action="store_true", help="include comments?")
+    parser.add_argument("--dates", action="store_true", help="include dates?")
     parser.add_argument("--debug", action="store_true", help="debug mode?")
     args = parser.parse_args()
 
@@ -847,6 +892,7 @@ def main():
                 encoding=args.encoding,
                 output_dir=args.output,
                 comments=args.comments,
+                dates=args.dates,
                 save=True,
             )
         else:
@@ -855,6 +901,7 @@ def main():
                 encoding=args.encoding,
                 output_dir=args.output,
                 comments=args.comments,
+                dates=args.dates,
                 save=True,
             )
         save_variables()
