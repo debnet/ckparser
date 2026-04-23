@@ -41,7 +41,7 @@ import re
 import time
 
 # Script version
-__version__ = "0.2"
+__version__ = "0.2.1"
 
 # Logger (because logging is awesome)
 logger = logging.getLogger(__name__)
@@ -64,9 +64,19 @@ class JominiJSONEncoder(json.JSONEncoder):
 
 def jomini_object_hook(obj):
     # JSON specific decoder for dates
-    for key, value in obj.items():
-        if isinstance(value, str) and regex_date.match(value):
-            obj[key] = convert_date(value) or value
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if isinstance(value, str) and regex_date.fullmatch(value):
+                obj[key] = convert_date(value) or value
+            elif isinstance(value, list):
+                obj[key] = jomini_object_hook(value)
+    elif isinstance(obj, list):
+        for index in range(len(obj)):
+            item = obj[index]
+            if isinstance(item, str) and regex_date.fullmatch(item):
+                obj[index] = convert_date(item) or item
+            elif isinstance(item, list):
+                obj[index] = jomini_object_hook(item)
     return obj
 
 
@@ -277,7 +287,7 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
                     value = val
                 elif value:
                     # Try to convert value to Python value
-                    if dates and regex_date.match(value):
+                    if dates and regex_date.fullmatch(value):
                         value = convert_date(value) or value
                     else:
                         try:
@@ -360,7 +370,7 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
                             node[key] = {"@type": "variable", "@value": value, "@result": result}
                             if result is not None and (key.startswith("@") or len(nodes) == 1):
                                 set_variable(key, result)
-                        elif result := variables.get(value):
+                        elif (result := variables.get(value)) is not None:
                             if not isinstance(result, str):
                                 node[key] = {"@type": "variable", "@value": value, "@result": result}
                                 if result is not None and (key.startswith("@") or len(nodes) == 1):
@@ -455,7 +465,7 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
                                     logger.warning(f"Filename: {filename}")
                                 logger.warning(f'Value for "{value}" cannot be found (line: {line_number})')
                             node.append({"@type": "variable", "@value": item, "@result": result})
-                        elif dates and regex_date.match(item):
+                        elif dates and regex_date.fullmatch(item):
                             item = convert_date(item) or item
                             node.append(item)
                         else:
@@ -602,14 +612,14 @@ def parse_all_files(
     return success
 
 
-def parse_all_locales(path, encoding="utf_8_sig", language="english", save=False, filepath="_locales.json"):
+def parse_all_locales(path, encoding="utf_8_sig", language="english", save=False, output="_locales.json"):
     """
     Parse all locales strings
     :param path: Path where to find locale files
     :param encoding: Encoding for reading files
     :param language: Target language
     :param save: (default false) save locales in file
-    :param filepath: locales output file location
+    :param output: locales output file location
     :return: Locales in dictionary
     """
     locales = {}
@@ -637,7 +647,7 @@ def parse_all_locales(path, encoding="utf_8_sig", language="english", save=False
                             key, _, value = match.groups()
                             locales[key] = value
     if save:
-        with open(filepath, "w") as file:
+        with open(output, "w") as file:
             json_dump(locales, file, sort_keys=True)
     return locales
 
@@ -813,7 +823,7 @@ def revert_file(path, output_dir=None, encoding="utf_8_sig", base_dir=None, save
         base_dir = os.path.dirname(path.replace(base_dir, ""))
     base_dir = base_dir or "."
     with open(path) as file:
-        data = json_load(file)
+        data = json.load(file)
     filename = os.path.join(str(base_dir), os.path.basename(path))
     logger.debug(f"Reverting {filename}")
     text = revert(data)
@@ -837,7 +847,7 @@ def load_variables(filepath="_variables.json"):
     if not os.path.exists(filepath):
         return
     with open(filepath) as file:
-        global_variables = json_load(file)
+        global_variables = json.load(file)
 
 
 def save_variables(filepath="_variables.json"):

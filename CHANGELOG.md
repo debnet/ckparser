@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Fixing argument shadowing in `parse_all_locales`
+- Fixing date conversion in JSON lists
+
 ## 0.2
 
 - Jomini date convertion in parsing and reversion.
