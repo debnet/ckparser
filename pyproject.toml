@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ckparser"
+version = "0.1"
+description = "Parse Paradox Jomini data files to Python/JSON and revert them back experimentally."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+  {name = "Marc Debureaux (debnet)"}
+]
+keywords = [
+  "paradox",
+  "jomini",
+  "modding",
+  "crusader-kings",
+  "europa-universalis",
+  "parser",
+  "json"
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: End Users/Desktop",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Text Processing :: General",
+  "Topic :: Utilities"
+]
+dependencies = []
+
+[project.optional-dependencies]
+detect-encoding = ["chardet>=5"]
+
+[project.urls]
+Homepage = "https://github.com/debnet/ckparser"
+Repository = "https://github.com/debnet/ckparser"
+Issues = "https://github.com/debnet/ckparser/issues"
+
+[project.scripts]
+ckparser = "ckparser:main"
+
+[tool.setuptools]
+py-modules = ["ckparser"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt", "*.yml"]
