@@ -41,7 +41,7 @@ import re
 import time
 
 # Script version
-__version__ = "0.2.1"
+__version__ = "0.3"
 
 # Logger (because logging is awesome)
 logger = logging.getLogger(__name__)
@@ -82,8 +82,8 @@ def jomini_object_hook(obj):
 
 json_load = functools.partial(json.load, object_hook=jomini_object_hook)
 json_loads = functools.partial(json.loads, object_hook=jomini_object_hook)
-json_dump = functools.partial(json.dump, cls=JominiJSONEncoder, indent=4, ensure_ascii=False)
-json_dumps = functools.partial(json.dumps, cls=JominiJSONEncoder, indent=4, ensure_ascii=False)
+json_dump = functools.partial(json.dump, cls=JominiJSONEncoder, indent=4)
+json_dumps = functools.partial(json.dumps, cls=JominiJSONEncoder, indent=4)
 
 # Boolean transformation
 booleans = {"yes": True, "no": False}
@@ -102,7 +102,7 @@ regex_string_multiline = re.compile(r"\"[^\"]*\"", re.MULTILINE)
 # Regex for quoted strings inside quoted strings
 regex_inner_string = re.compile(r"\|(?P<index>\d+)\|")
 # Regex to remove comments in files
-regex_comment = re.compile(r"(?P<space>\s*)(?P<comment>#.*)$", re.MULTILINE)
+regex_comment = re.compile(r"(?P<space>\s*)(?P<comment>#.*)")
 # Regex to fix blocks with no equal sign
 regex_block = re.compile(r"^([^\s\{\=]+)\s*\{\s*$", re.MULTILINE)
 # Regex to remove "list" prefix
@@ -111,8 +111,8 @@ regex_list = re.compile(r"\s*=\s*list\s+([\{\"\|])", re.MULTILINE)
 regex_color = re.compile(r"=\s*(?P<type>\w+)\s*{")
 # Regex to parse items with format key=value
 regex_inline = re.compile(r"([^\s\"]+\s*[?!<=>]+\s*(([^@\"]\[?[^\s]+\]?)|(\"[^\"]+\")|(@\[[^\]]+\]))|(@\w+))")
-# Regex to parse blocks with bracket below the key
-regex_values = re.compile(r"(([?!<=>]+)\s*\n+)|(\n+\s*([?!<=>]+))")
+# Regex to parse blocks with bracket below the key/operator
+regex_values = re.compile(r"(\s*([?!<=>]+)\s+\{)|(\s+\s*([?!<=>])+\s*\{)")
 # Regex to parse lines with format key=value
 regex_line = re.compile(r"\"?(?P<key>[^\s\"]+)\"?\s*(?P<operator>[?!<=>]+)\s*(list\s*)?(?P<value>.*)")
 # Regex to parse independent items in a list
@@ -125,6 +125,8 @@ regex_empty = re.compile(r"(\n\s*\n)+", re.MULTILINE)
 regex_locale = re.compile(r"^\s*(?P<key>[^\:#]+)\:(\d+)?\s\"(?P<value>.+)\".*$")
 # Regex for keywords
 regex_keyword = re.compile(r"(" + "|".join(map(re.escape, sorted(keywords, key=len, reverse=True))) + r") ")
+# Regex for fixing line count when bracket is below the key/operator
+regex_count = re.compile(r"([?!<=>]+)\s*§\n+\s*\{")
 # Regex for string indexes
 regex_index = re.compile(r"\|(\d+)\|")
 # Regex for variables
@@ -182,7 +184,7 @@ def read_file(path, encoding="utf_8_sig"):
             encoding = result["encoding"]
             logger.debug(f"Detected encoding: {result['encoding']} ({result['confidence']:0.0%})")
         del raw_data
-    with open(path, encoding=encoding) as file:
+    with open(path, "r", encoding=encoding) as file:
         return file.read()
 
 
@@ -199,19 +201,19 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
     """
 
     def replace(match):
-        nonlocal strings, index
-        index = len(strings)
-        strings[str(index)] = match.group(0).replace("\n", "\\n")
-        return f"|{index}|"
+        nonlocal strings, strings_index
+        strings_index = len(strings)
+        strings[str(strings_index)] = match.group(0).replace("\n", "\\n")
+        return f"|{strings_index}|"
 
     def replace_comment(match):
-        nonlocal strings, index
-        index = len(strings)
+        nonlocal strings, strings_index
+        strings_index = len(strings)
         value, space = match.group("comment").replace('"', "'").strip(), match.group("space")
-        strings[str(index)] = f'"{value}"'
+        strings[str(strings_index)] = f'"{value}"'
         if not value.strip():
             return ""
-        return f"\n{space}#{index}=|{index}|\n"
+        return f"\n{space}#{strings_index}=|{strings_index}|"
 
     def set_variable(key, value, is_global=is_global):
         global global_variables
@@ -223,29 +225,35 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
 
     root = {}
     nodes = [("", root)]
-    strings, index = {}, 0
+    strings, strings_index = {}, 0
     variables = global_variables.copy()
     # Cleaning document
+    text = text.replace("\n", "\n§\n")
     text = regex_string.sub(replace, text)
     if comments:
         text = regex_comment.sub(replace_comment, text)
     else:
         text = regex_comment.sub("", text)
+    text = text.replace("{", "\n{\n").replace("}", "\n}\n")
     text = regex_string_multiline.sub(replace, text)
     text = regex_list.sub(r"|list=\g<1>", text)
-    text = regex_block.sub(r"\g<1>={", text)
-    text = text.replace("{", "\n{\n").replace("}", "\n}\n")
     text = regex_color.sub(r"={\n\g<1>", text)
     text = regex_inline.sub(r"\g<1>\n", text)
-    text = regex_values.sub(r"\g<2>\g<4>", text)
+    text = regex_values.sub(r"\g<2>\g<4>{", text)
     text = regex_empty.sub(r"\n", text)
     text = regex_keyword.sub(r"\1|", text)
+    text = regex_count.sub(r"\g<1>{\n§", text)
     text = regex_index.sub(lambda match: strings[match.group(1)], text)
 
     # Parsing document line by line
-    for line_number, line_text in enumerate(text.splitlines(), start=1):
+    line_number = 1
+    for line_text in text.splitlines():
         try:
             line_text = line_text.strip()
+            # Line number
+            if count := line_text.count("§"):
+                line_number += count
+                line_text = line_text.rstrip("§")
             # Nothing to do if line is empty
             if not line_text:
                 continue
@@ -511,32 +519,32 @@ def parse_file(
     start_time = time.monotonic()
     if base_dir:
         base_dir = os.sep.join(str(base_dir).rstrip(os.sep).split(os.sep)[:-1]) + os.sep
-        base_dir = os.path.dirname(path.replace(base_dir.replace(os.sep, "/"), ""))
+        base_dir = os.path.dirname(path.replace(base_dir, ""))
     base_dir = base_dir or "."
     text = read_file(path, encoding)
     if not text or not text.strip():
         return None
     for pattern, replacement in patch or []:
         text = re.sub(pattern, replacement, text)
-    filename = os.path.join(base_dir, os.path.basename(path)).replace(os.sep, "/")
+    filename = os.path.join(base_dir, os.path.basename(path))
     logger.debug(f"Parsing {filename}")
     data = parse_text(
         text, return_text_on_error=True, comments=comments, dates=dates, filename=filename, is_global=is_global
     )
     if save:
         filename, _ = os.path.splitext(os.path.basename(path))
-        directory = os.path.join(output_dir or "output", *base_dir.split("/")).replace(os.sep, "/")
+        directory = os.path.join(output_dir or "output", *base_dir.split(os.sep))
         os.makedirs(directory, exist_ok=True)
         if not isinstance(data, dict):
             filename = os.path.join(directory, filename + ".error")
             try:
-                with open(filename, "w") as file:
+                with open(filename, "w", encoding=encoding) as file:
                     file.write(data)
             except UnicodeEncodeError as error:
                 logger.error(f"Unable to write file {filename}: {error}")
         else:
             filename = os.path.join(directory, filename + ".json")
-            with open(filename, "w") as file:
+            with open(filename, "w", encoding="utf-8") as file:
                 json_dump(data, file)
     total_time = time.monotonic() - start_time
     logger.debug(f"Elapsed time: {total_time:0.3f}s!")
@@ -589,7 +597,7 @@ def parse_all_files(
         for filename in all_files:
             if not filename.lower().endswith(".txt"):
                 continue
-            filepath = os.path.join(current_path, filename).replace(os.sep, "/")
+            filepath = os.path.join(current_path, filename)
             data = parse_file(
                 filepath,
                 output_dir=output_dir,
@@ -603,7 +611,7 @@ def parse_all_files(
             if isinstance(data, str):
                 errors.append(filepath)
                 continue
-            filepath = filepath.replace(str(path), "").lstrip("/")
+            filepath = filepath.replace(str(path), "").lstrip(os.sep)
             success[filepath] = data if keep_data else True
     total_time = time.monotonic() - start_time
     logger.info(f"{len(success)} parsed file(s) and {len(errors)} errors in {total_time:0.3f}s!")
@@ -647,7 +655,7 @@ def parse_all_locales(path, encoding="utf_8_sig", language="english", save=False
                             key, _, value = match.groups()
                             locales[key] = value
     if save:
-        with open(output, "w") as file:
+        with open(output, "w", encoding="utf-8") as file:
             json_dump(locales, file, sort_keys=True)
     return locales
 
@@ -822,7 +830,7 @@ def revert_file(path, output_dir=None, encoding="utf_8_sig", base_dir=None, save
         base_dir = os.sep.join(str(base_dir).rstrip(os.sep).split(os.sep)[:-1]) + os.sep
         base_dir = os.path.dirname(path.replace(base_dir, ""))
     base_dir = base_dir or "."
-    with open(path) as file:
+    with open(path, "r", encoding="utf-8") as file:
         data = json.load(file)
     filename = os.path.join(str(base_dir), os.path.basename(path))
     logger.debug(f"Reverting {filename}")
@@ -846,7 +854,7 @@ def load_variables(filepath="_variables.json"):
     global global_variables
     if not os.path.exists(filepath):
         return
-    with open(filepath) as file:
+    with open(filepath, "r", encoding="utf-8") as file:
         global_variables = json.load(file)
 
 
@@ -856,7 +864,7 @@ def save_variables(filepath="_variables.json"):
     """
     if not global_variables:
         return
-    with open(filepath, "w") as file:
+    with open(filepath, "w", encoding="utf-8") as file:
         json_dump(global_variables, file, sort_keys=True)
 
 

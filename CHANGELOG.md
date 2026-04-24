@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3
+
+- Counting lines from original file when parsing
+- Fixing transformation regex
+- Keeping system path separators
+- Forcing encoding for JSON and error outputs 
+
 ## 0.2.1
 
 - Fixing argument shadowing in `parse_all_locales`
