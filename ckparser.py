@@ -102,17 +102,17 @@ regex_string_multiline = re.compile(r"\"[^\"]*\"", re.MULTILINE)
 # Regex for quoted strings inside quoted strings
 regex_inner_string = re.compile(r"\|(?P<index>\d+)\|")
 # Regex to remove comments in files
-regex_comment = re.compile(r"(?P<space>\s*)(?P<comment>#.*)")
+regex_comment = re.compile(r"(?P<space>\s*)(?P<comment>#.*)", re.MULTILINE)
 # Regex to fix blocks with no equal sign
-regex_block = re.compile(r"^([^\s\{\=]+)\s*\{\s*$", re.MULTILINE)
+regex_missing = re.compile(r"^\s*([\w\.]+)\s+([{])", re.MULTILINE)
 # Regex to remove "list" prefix
 regex_list = re.compile(r"\s*=\s*list\s+([\{\"\|])", re.MULTILINE)
 # Regex for color blocks (color = [rgb|hsv] { x y z })
-regex_color = re.compile(r"=\s*(?P<type>\w+)\s*{")
+regex_color = re.compile(r"=\s*(?P<type>\w+)\s*{", re.MULTILINE)
 # Regex to parse items with format key=value
 regex_inline = re.compile(r"([^\s\"]+\s*[?!<=>]+\s*(([^@\"]\[?[^\s]+\]?)|(\"[^\"]+\")|(@\[[^\]]+\]))|(@\w+))")
 # Regex to parse blocks with bracket below the key/operator
-regex_values = re.compile(r"(\s*([?!<=>]+)\s+\{)|(\s+\s*([?!<=>])+\s*\{)")
+regex_block = re.compile(r"(\s*([?!<=>]+)\s+\{)|(\s+\s*([?!<=>])+\s*\{)", re.MULTILINE)
 # Regex to parse lines with format key=value
 regex_line = re.compile(r"\"?(?P<key>[^\s\"]+)\"?\s*(?P<operator>[?!<=>]+)\s*(list\s*)?(?P<value>.*)")
 # Regex to parse independent items in a list
@@ -126,7 +126,7 @@ regex_locale = re.compile(r"^\s*(?P<key>[^\:#]+)\:(\d+)?\s\"(?P<value>.+)\".*$")
 # Regex for keywords
 regex_keyword = re.compile(r"(" + "|".join(map(re.escape, sorted(keywords, key=len, reverse=True))) + r") ")
 # Regex for fixing line count when bracket is below the key/operator
-regex_count = re.compile(r"([?!<=>]+)\s*§\n+\s*\{")
+regex_count = re.compile(r"([?!<=>]+)\s*([§\n]+)\s*\{")
 # Regex for string indexes
 regex_index = re.compile(r"\|(\d+)\|")
 # Regex for variables
@@ -234,15 +234,21 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
         text = regex_comment.sub(replace_comment, text)
     else:
         text = regex_comment.sub("", text)
-    text = text.replace("{", "\n{\n").replace("}", "\n}\n")
     text = regex_string_multiline.sub(replace, text)
-    text = regex_list.sub(r"|list=\g<1>", text)
+    if missings := regex_missing.findall(text):
+        if filename:
+            logger.warning(f"Filename: {filename}")
+        for key, val in missings:
+            logger.warning(f"Potential missing `=` operator between `{key}` and `{val}` needs to be fixed.")
+        text = regex_missing.sub(r"\g<1>=\g<2>", text)
     text = regex_color.sub(r"={\n\g<1>", text)
+    text = regex_list.sub(r"|list=\g<1>", text)
+    text = text.replace("{", "\n{\n").replace("}", "\n}\n")
     text = regex_inline.sub(r"\g<1>\n", text)
-    text = regex_values.sub(r"\g<2>\g<4>{", text)
+    text = regex_block.sub(r"\g<2>\g<4>{", text)
     text = regex_empty.sub(r"\n", text)
     text = regex_keyword.sub(r"\1|", text)
-    text = regex_count.sub(r"\g<1>{\n§", text)
+    text = regex_count.sub(r"\g<1>{\n\g<2>", text)
     text = regex_index.sub(lambda match: strings[match.group(1)], text)
 
     # Parsing document line by line

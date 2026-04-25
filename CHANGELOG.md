@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Fixing regression on color blocks
+- Alert when missing operator before block
+
 ## 0.3
 
 - Counting lines from original file when parsing
