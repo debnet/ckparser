@@ -41,7 +41,7 @@ import re
 import time
 
 # Script version
-__version__ = "0.3"
+__version__ = "0.3.1"
 
 # Logger (because logging is awesome)
 logger = logging.getLogger(__name__)

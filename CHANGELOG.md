@@ -3,7 +3,7 @@
 ## 0.3.1
 
 - Fixing regression on color blocks
-- Alert when missing operator before block
+- Detect missing operator before block
 
 ## 0.3
 
