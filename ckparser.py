@@ -41,7 +41,7 @@ import re
 import time
 
 # Script version
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 # Logger (because logging is awesome)
 logger = logging.getLogger(__name__)
@@ -104,9 +104,11 @@ regex_inner_string = re.compile(r"\|(?P<index>\d+)\|")
 # Regex to remove comments in files
 regex_comment = re.compile(r"(?P<space>\s*)(?P<comment>#.*)", re.MULTILINE)
 # Regex to fix blocks with no equal sign
-regex_missing = re.compile(r"^\s*([\w\.]+)\s+([{])", re.MULTILINE)
+regex_missing = re.compile(r"^(\s*)([\w\.]+)\s+([{])", re.MULTILINE)
 # Regex to remove "list" prefix
 regex_list = re.compile(r"\s*=\s*list\s+([\{\"\|])", re.MULTILINE)
+# Regex to split brackets on new lines
+regex_jump = re.compile(r"(\s*)([{}])")
 # Regex for color blocks (color = [rgb|hsv] { x y z })
 regex_color = re.compile(r"=\s*(?P<type>\w+)\s*{", re.MULTILINE)
 # Regex to parse items with format key=value
@@ -129,6 +131,8 @@ regex_keyword = re.compile(r"(" + "|".join(map(re.escape, sorted(keywords, key=l
 regex_count = re.compile(r"([?!<=>]+)\s*([§\n]+)\s*\{")
 # Regex for string indexes
 regex_index = re.compile(r"\|(\d+)\|")
+# Regex to clean line numbers
+regex_clean = re.compile(r"^§+\n", re.MULTILINE)
 # Regex for variables
 regex_variables = re.compile(r"\b([\w]+)\b")
 
@@ -238,12 +242,12 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
     if missings := regex_missing.findall(text):
         if filename:
             logger.warning(f"Filename: {filename}")
-        for key, val in missings:
+        for _, key, val in missings:
             logger.warning(f"Potential missing `=` operator between `{key}` and `{val}` needs to be fixed.")
-        text = regex_missing.sub(r"\g<1>=\g<2>", text)
+        text = regex_missing.sub(r"\g<1>\g<2>=\g<3>", text)
     text = regex_color.sub(r"={\n\g<1>", text)
     text = regex_list.sub(r"|list=\g<1>", text)
-    text = text.replace("{", "\n{\n").replace("}", "\n}\n")
+    text = regex_jump.sub(r"\n\g<1>\g<2>\n", text)
     text = regex_inline.sub(r"\g<1>\n", text)
     text = regex_block.sub(r"\g<2>\g<4>{", text)
     text = regex_empty.sub(r"\n", text)
@@ -418,10 +422,14 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
                 nodes.pop()
             # If line is a list or list item
             else:
+                # Assuming the parsed file is just an array
+                if len(nodes) == 1 and not node:
+                    root = node = []
+                    nodes = [("", root)]
                 # Ensure previous data are treated as list
                 if not isinstance(node, list):
                     if len(nodes) < 2:
-                        raise SyntaxError("Incorrect file format or syntax!")
+                        raise SyntaxError("Incorrect file format or unknown syntax error!")
                     _, prev = nodes[-2]
                     if node_name:
                         if node and isinstance(node, dict):
@@ -472,12 +480,12 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
                                 result = None
                             if isinstance(result, float):
                                 result = round(result, 5)
-                            node.append({"@type": "formula", "@value": value, "@result": result})
+                            node.append({"@type": "formula", "@value": item, "@result": result})
                         elif item.startswith("@"):
                             if (result := variables.get(item)) is None:
                                 if filename:
                                     logger.warning(f"Filename: {filename}")
-                                logger.warning(f'Value for "{value}" cannot be found (line: {line_number})')
+                                logger.warning(f'Value for "{item}" cannot be found (line: {line_number})')
                             node.append({"@type": "variable", "@value": item, "@result": result})
                         elif dates and regex_date.fullmatch(item):
                             item = convert_date(item) or item
@@ -494,7 +502,7 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
             logger.error(f"Line {line_number}: {line_text}")
             logger.error(f"Parse error: {error}")
             logger.debug("Exception:", exc_info=True)
-            return text if return_text_on_error else None
+            return regex_clean.sub("", text) if return_text_on_error else None
     return root
 
 
@@ -736,11 +744,13 @@ def revert(obj, from_key=None, prev_key=None, depth=-1, sep="\t", sort=False):
         if from_key and (from_key.lower() == "this" or not any(regex.match(from_key) for regex in list_keys_rules)):
             for value in sorted(obj) if sort else obj:
                 lines.extend(revert(value, from_key=from_key, prev_key=prev_key, depth=depth, sep=sep, sort=sort))
-        elif not any(isinstance(o, (dict, list)) for o in obj):
+        elif not any(isinstance(o, (dict, list)) for o in obj) and not any(
+            o.startswith("#") and o.endswith("#") for o in obj if isinstance(o, str)
+        ):
             prefix = f"{tabs}{from_key} = {{"
             # Only for color modes
             if from_key == "color" and len(obj) == 4 and isinstance(obj[0], str):
-                prefix = f"{tabs}{from_key} {obj[0]} = {{"
+                prefix = f"{tabs}{from_key} = {obj[0]} {{"
                 obj = obj[1:]
             func = functools.partial(revert_value, from_key=from_key, prev_key=prev_key, sep=sep, sort=sort)
             values = " ".join(map(str, map(func, obj)))
@@ -783,7 +793,7 @@ def revert_value(value, from_key=None, prev_key=None, **kwargs):
         return "yes" if value else "no"
     elif isinstance(value, str):
         if value.startswith("#") and value.endswith("#"):
-            return f"#{value}"
+            return f"#{value.strip("#")}"
         elif (
             " " in value
             or (value.startswith("$") and value.endswith("$"))

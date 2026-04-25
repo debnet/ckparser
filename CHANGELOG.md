@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- Making error output a little bit readable
+- Fixing regression on color blocks when reversion
+- Fixing array comments in reversion
+- Trying to parse array-only files
+
 ## 0.3.1
 
 - Fixing regression on color blocks
