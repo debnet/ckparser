@@ -41,7 +41,7 @@ import re
 import time
 
 # Script version
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 # Logger (because logging is awesome)
 logger = logging.getLogger(__name__)
@@ -120,7 +120,7 @@ regex_line = re.compile(r"\"?(?P<key>[^\s\"]+)\"?\s*(?P<operator>[?!<=>]+)\s*(li
 # Regex to parse independent items in a list
 regex_item = re.compile(r"(\"[^\"]+\"|[\d\.]+|[^\s]+)")
 # Regex to parse dates
-regex_date = re.compile(r"^(?:\d{1,4})\.(?:[1-9]|1[0-2])\.(?:[1-9]|[12]\d|3[01])$")
+regex_date = re.compile(r"^(?P<year>\d{1,4})\.(?P<month>[1-9]|1[0-2])\.(?P<day>[1-9]|[12]\d|3[01])$")
 # Regex to remove empty lines
 regex_empty = re.compile(r"(\n\s*\n)+", re.MULTILINE)
 # Regex to parse locale files
@@ -192,14 +192,23 @@ def read_file(path, encoding="utf_8_sig"):
         return file.read()
 
 
-def parse_text(text, return_text_on_error=False, comments=False, dates=False, filename=None, is_global=False):
+def parse_text(
+    text,
+    return_text_on_error=False,
+    comments=False,
+    dates=False,
+    as_object=False,
+    filename=None,
+    is_global=False,
+):
     """
     Parse raw text
     :param text: Text to parse
     :param return_text_on_error: (default false) Return working text document if parsing fails
     :param comments: (default false) Include comments?
     :param dates: (default false) Include dates?
-    :param filename: (default none) Filename (only for debugging)
+    :param as_object: (default false) Return data as an object-like instead of dict
+    :param filename: (default none) file which is parsed (only for debugging)
     :param is_global: (default false) Are variables global?
     :return: Parsed data as dictionary
     """
@@ -503,7 +512,7 @@ def parse_text(text, return_text_on_error=False, comments=False, dates=False, fi
             logger.error(f"Parse error: {error}")
             logger.debug("Exception:", exc_info=True)
             return regex_clean.sub("", text) if return_text_on_error else None
-    return root
+    return objectify(root) if as_object else root
 
 
 def parse_file(
@@ -514,6 +523,7 @@ def parse_file(
     save=False,
     comments=False,
     dates=False,
+    as_object=False,
     is_global=False,
     patch=None,
 ):
@@ -524,12 +534,16 @@ def parse_file(
     :param encoding: Encoding used to read file
     :param base_dir: Base directory (for debug)
     :param save: (default false) Save parsed file in output directory
-    :param comments: Include comments?
-    :param dates: Include dates?
+    :param comments: (default false) Include comments?
+    :param dates: (default false) Include dates?
+    :param as_object: (default false) Return data as an object-like instead of dict
     :param is_global: (default false) Are file's variables global?
     :param patch: String replacement patterns
     :return: Parsed data as dictionary or text if parsing fails
     """
+    if save and as_object:
+        logger.warning("`as_object` disabled bacause only dicts can be converted to JSON.")
+        as_object = False
     start_time = time.monotonic()
     if base_dir:
         base_dir = os.sep.join(str(base_dir).rstrip(os.sep).split(os.sep)[:-1]) + os.sep
@@ -543,7 +557,13 @@ def parse_file(
     filename = os.path.join(base_dir, os.path.basename(path))
     logger.debug(f"Parsing {filename}")
     data = parse_text(
-        text, return_text_on_error=True, comments=comments, dates=dates, filename=filename, is_global=is_global
+        text,
+        return_text_on_error=True,
+        comments=comments,
+        dates=dates,
+        as_object=as_object,
+        filename=filename,
+        is_global=is_global,
     )
     if save:
         filename, _ = os.path.splitext(os.path.basename(path))
@@ -573,6 +593,7 @@ def parse_all_files(
     save=False,
     comments=False,
     dates=False,
+    as_object=False,
     variables_first=True,
     _variables_only=False,
 ):
@@ -583,8 +604,9 @@ def parse_all_files(
     :param encoding: Encoding used to read files
     :param keep_data: (default false) Return parsed data of all files in a dictionary
     :param save: (default false) Save every parsed data in output directory
-    :param comments: Include comments?
-    :param dates: Include dates?
+    :param comments: (default false) Include comments?
+    :param dates: (default false) Include dates?
+    :param as_object: (default false) Return data as an object-like instead of dict
     :param variables_first: Try to parse variables first
     :return: Dictionary (key: file, value: parsed data if keep_data=True)
     """
@@ -600,6 +622,7 @@ def parse_all_files(
                 save=save,
                 comments=comments,
                 dates=dates,
+                as_object=as_object,
                 variables_first=False,
                 _variables_only=True,
             )
@@ -620,6 +643,7 @@ def parse_all_files(
                 save=save,
                 comments=comments,
                 dates=dates,
+                as_object=as_object,
                 is_global=_variables_only,
             )
             if isinstance(data, str):
@@ -691,6 +715,48 @@ def walk(obj, *from_keys):
         yield obj, from_keys
 
 
+def objectify(data, name="Object", default=None):
+    """
+    Convert a dictionary to an object-like dictionary
+    :param data: dictionary
+    :param name: name of the object
+    :param default: default value for unknown attributes
+    :return: object-like dictionary
+    """
+
+    def _getattr(s, k):
+        try:
+            object.__getattribute__(s, k)
+        except AttributeError:
+            return s.get(k, default)
+
+    if isinstance(data, list):
+        return [
+            objectify(item)
+            for item in data
+            if not (isinstance(item, str) and item.startswith("@") and item.endswith("@"))
+        ]
+    elif isinstance(data, dict):
+        name = (data.get("@type") or name).title()
+        slots = set()
+        attrs = dict(__getattr__=lambda s, k: _getattr(s, k), __slots__=slots)
+        subdata = {}
+        for key, value in data.items():
+            if key.startswith("#"):
+                continue
+            skey = key.replace("@", "_").replace(":", "_")
+            if match := regex_date.match(skey):
+                skey = "_".join(match.groups())
+            skey = f"_{skey}" if key != skey or key[0].isdigit() else skey
+            slots.add(skey)
+            if isinstance(value, (list, dict)):
+                subdata[key] = subdata[skey] = objectify(value)
+                continue
+            subdata[key] = subdata[skey] = value
+        return type(name, (dict,), attrs)(subdata)
+    return data
+
+
 # Tags which are always a list when reverting
 list_keys_rules = [
     # Colors
@@ -737,6 +803,8 @@ def revert(obj, from_key=None, prev_key=None, depth=-1, sep="\t", sort=False):
             elif depth > 0:
                 lines.append(f"{tabs}{{")
             for key, value in sorted(obj.items()) if sort else obj.items():
+                if key.startswith("_"):
+                    continue
                 lines.extend(revert(value, from_key=key, prev_key=from_key, depth=depth + 1, sep=sep, sort=sort))
             if from_key or depth > 0:
                 lines.append(f"{tabs}}}")
@@ -884,6 +952,22 @@ def save_variables(filepath="_variables.json"):
         json_dump(global_variables, file, sort_keys=True)
 
 
+def enable_logging(debug=False, file=False):
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    if debug:
+        console_handler.setLevel(logging.DEBUG)
+    if file:
+        file_handler = logging.FileHandler("ckparser.log")
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+
 def main():
     """
     Command-line main entrypoint
@@ -900,18 +984,7 @@ def main():
     parser.add_argument("--debug", action="store_true", help="debug mode?")
     args = parser.parse_args()
 
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-    if args.debug:
-        console_handler.setLevel(logging.DEBUG)
-    file_handler = logging.FileHandler("ckparser.log")
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    enable_logging(debug=args.debug, file=True)
 
     if args.revert:
         if os.path.isdir(args.path):

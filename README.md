@@ -253,6 +253,29 @@ from ckparser import walk
 for value, path in walk(data):
     print(path, value)
 ```
+
+### `objectify`
+
+Transform a dictionary datastructure into an object-like dictionary which allows a better inspection.
+
+```python
+from ckparser import objectify
+
+data = {
+    "name": "Louis",
+    "traits": [
+        "brave",
+        "diligent"
+    ],
+    "father": {
+        "name": "Charles"
+    }
+}
+
+obj = objectify(data)
+print(obj.traits[1])
+print(obj.father.name)
+```
 	
 ### `parse_all_locales`
 
@@ -487,9 +510,9 @@ Paradox scripting languages include many practical exceptions, formatting varian
 
 ### Parsing
 
-* `parse_text(text, return_text_on_error=False, comments=False, dates=False, filename=None, is_global=False)`
-* `parse_file(path, output_dir=None, encoding="utf_8_sig", base_dir=None, save=False, comments=False, dates=False, is_global=False, patch=None)`
-* `parse_all_files(path, output_dir=None, encoding="utf_8_sig", keep_data=False, save=False, comments=False, dates=False, variables_first=True)`
+* `parse_text(text, return_text_on_error=False, comments=False, dates=False, as_object=False, filename=None, is_global=False)`
+* `parse_file(path, output_dir=None, encoding="utf_8_sig", base_dir=None, save=False, comments=False, dates=False, as_object=False, is_global=False, patch=None)`
+* `parse_all_files(path, output_dir=None, encoding="utf_8_sig", keep_data=False, save=False, comments=False, dates=False, as_object=False, variables_first=True)`
 
 ### Reversion
 
@@ -502,6 +525,7 @@ Paradox scripting languages include many practical exceptions, formatting varian
 * `convert_date(date, key=None)`
 * `read_file(path, encoding="utf_8_sig")`
 * `walk(obj, *from_keys)`
+* `objectify(item, name="Object", default=None)`
 * `parse_all_locales(path, encoding="utf_8_sig", language="english", save=False)`
 * `load_variables(filepath="_variables.json")`
 * `save_variables(filepath="_variables.json")`

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.3
+
+- Adding `objectify` function to transform dict to object-like
+
 ## 0.3.2
 
 - Making error output a little bit readable
