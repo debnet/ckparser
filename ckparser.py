@@ -41,7 +41,7 @@ import re
 import time
 
 # Script version
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 # Logger (because logging is awesome)
 logger = logging.getLogger(__name__)
@@ -294,7 +294,7 @@ def parse_text(
                         if not isinstance(node[key], list):
                             node[key] = [node[key]]
                         if operator != "=":
-                            node[key].append({"@operator": operator, "@value": item})
+                            node[key].append({"@type": "operator", "@operator": operator, "@value": item})
                         else:
                             node[key].append(item)
                     # If this block name must be forced as list
@@ -303,7 +303,7 @@ def parse_text(
                     elif isinstance(node, list):  # Only for on_actions...
                         node.append(item)
                     elif operator != "=":
-                        node[key] = {"@operator": operator, "@value": item}
+                        node[key] = {"@type": "operator", "@operator": operator, "@value": item}
                     else:
                         node[key] = item
                     # Change current node for next lines
@@ -340,7 +340,7 @@ def parse_text(
                 else:
                     # If operator is not equal
                     if operator != "=":
-                        node[key] = {"@operator": operator, "@value": value}
+                        node[key] = {"@type": "operator", "@operator": operator, "@value": value}
                         if isinstance(value, str):
                             if value == "":
                                 node[key]["@value"] = item = {}
@@ -724,6 +724,14 @@ def objectify(data, name="Object", default=None):
     :return: object-like dictionary
     """
 
+    def clean(item):
+        if isinstance(item, dict):
+            return {key: clean(value) for key, value in item.items() if not key.startswith("_")}
+        elif isinstance(item, list):
+            return [clean(value) for value in item]
+        else:
+            return item
+
     def _getattr(s, k):
         try:
             object.__getattribute__(s, k)
@@ -734,12 +742,17 @@ def objectify(data, name="Object", default=None):
         return [
             objectify(item)
             for item in data
-            if not (isinstance(item, str) and item.startswith("@") and item.endswith("@"))
+            if not (isinstance(item, str) and item.startswith("#") and item.endswith("#"))
         ]
     elif isinstance(data, dict):
         name = (data.get("@type") or name).title()
         slots = set()
-        attrs = dict(__getattr__=lambda s, k: _getattr(s, k), __slots__=slots)
+        attrs = dict(
+            __getattr__=lambda s, k: _getattr(s, k),
+            __slots__=slots,
+            __str__=lambda s: str(clean(s)),
+            __repr__=lambda s: repr(clean(s)),
+        )
         subdata = {}
         for key, value in data.items():
             if key.startswith("#"):
@@ -747,7 +760,8 @@ def objectify(data, name="Object", default=None):
             skey = key.replace("@", "_").replace(":", "_")
             if match := regex_date.match(skey):
                 skey = "_".join(match.groups())
-            skey = f"_{skey}" if key != skey or key[0].isdigit() else skey
+            if not skey.startswith("_"):
+                skey = f"_{skey}" if key != skey or key[0].isdigit() else skey
             slots.add(skey)
             if isinstance(value, (list, dict)):
                 subdata[key] = subdata[skey] = objectify(value)
@@ -973,7 +987,7 @@ def main():
     Command-line main entrypoint
     """
     parser = argparse.ArgumentParser(
-        description="Parse data from Paradox files in JSON or revert JSON files to Paradox format"
+        description=f"Parse data from Paradox files in JSON or revert JSON files to Paradox format ({__version__})"
     )
     parser.add_argument("path", type=str, help="path to a file or a directory to parse/revert")
     parser.add_argument("--encoding", type=str, help="encoding for reading/writing files")

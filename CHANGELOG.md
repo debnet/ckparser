@@ -1,32 +1,36 @@
 # Changelog
 
+## 0.3.4
+
+- Fixing `objectify` operators, formulas, variables and comments.
+
 ## 0.3.3
 
-- Adding `objectify` function to transform dict to object-like
+- Adding `objectify` function to transform dict to object-like.
 
 ## 0.3.2
 
-- Making error output a little bit readable
-- Fixing regression on color blocks when reversion
-- Fixing array comments in reversion
-- Trying to parse array-only files
+- Making error output a little bit readable.
+- Fixing regression on color blocks when reversion.
+- Fixing array comments in reversion.
+- Trying to parse array-only files.
 
 ## 0.3.1
 
-- Fixing regression on color blocks
-- Detect missing operator before block
+- Fixing regression on color blocks.
+- Detect missing operator before block.
 
 ## 0.3
 
-- Counting lines from original file when parsing
-- Fixing transformation regex
-- Keeping system path separators
-- Forcing encoding for JSON and error outputs 
+- Counting lines from original file when parsing.
+- Fixing transformation regex.
+- Keeping system path separators.
+- Forcing encoding for JSON and error outputs.
 
 ## 0.2.1
 
-- Fixing argument shadowing in `parse_all_locales`
-- Fixing date conversion in JSON lists
+- Fixing argument shadowing in `parse_all_locales`.
+- Fixing date conversion in JSON lists.
 
 ## 0.2
 
