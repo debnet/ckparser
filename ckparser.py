@@ -41,7 +41,7 @@ import re
 import time
 
 # Script version
-__version__ = "0.3.4"
+__version__ = "0.3.5"
 
 # Logger (because logging is awesome)
 logger = logging.getLogger(__name__)
@@ -116,7 +116,7 @@ regex_inline = re.compile(r"([^\s\"]+\s*[?!<=>]+\s*(([^@\"]\[?[^\s]+\]?)|(\"[^\"
 # Regex to parse blocks with bracket below the key/operator
 regex_block = re.compile(r"(\s*([?!<=>]+)\s+\{)|(\s+\s*([?!<=>])+\s*\{)", re.MULTILINE)
 # Regex to parse lines with format key=value
-regex_line = re.compile(r"\"?(?P<key>[^\s\"]+)\"?\s*(?P<operator>[?!<=>]+)\s*(list\s*)?(?P<value>.*)")
+regex_line = re.compile(r"\"?(?P<key>[^\s\"?!<=>]+)\"?\s*(?P<operator>[?!<=>]+)\s*(list\s*)?(?P<value>.*)")
 # Regex to parse independent items in a list
 regex_item = re.compile(r"(\"[^\"]+\"|[\d\.]+|[^\s]+)")
 # Regex to parse dates

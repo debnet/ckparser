@@ -2,6 +2,10 @@
 
 ## 0.3.4
 
+- Fixing nested operators in parsing.
+
+## 0.3.4
+
 - Fixing `objectify` operators, formulas, variables and comments.
 
 ## 0.3.3
