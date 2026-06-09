@@ -875,7 +875,7 @@ def revert_value(value, from_key=None, prev_key=None, **kwargs):
         return "yes" if value else "no"
     elif isinstance(value, str):
         if value.startswith("#") and value.endswith("#"):
-            return f"#{value.strip("#")}"
+            return f'#{value.strip("#")}'
         elif (
             " " in value
             or (value.startswith("$") and value.endswith("$"))
